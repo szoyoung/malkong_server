@@ -27,16 +27,23 @@ AI 기반 한국어 발표 연습 및 분석 웹서비스
 - 영상 업로드 및 실시간 녹화 기능 지원
 - 5가지 지표를 바탕으로 한 A~D 등급 평가 및 시각화 차트 제공
 
+<img width="1440" height="900" alt="스크린샷 2026-01-28 오후 1 14 02" src="https://github.com/user-attachments/assets/3fb10a04-7d73-442b-8145-9699eff0641d" />
+
 
 ### 2.2 GPT 기반 맞춤형 코칭
 - 부자연스러운 문장 및 어색한 표현 수정 제안
 - 빈번하게 사용된 반복 단어 분석
 - 발표 내용 기반 예상 질문 및 시간 조절 가이드 제공
 
+<img width="1440" height="810" alt="스크린샷 2026-01-28 오후 1 20 22" src="https://github.com/user-attachments/assets/6313f68f-460e-4dd9-ab44-4ea8dc84ead2" />
+
 
 ### 2.3 발표 비교 및 협업
 - 동일 주제 내 이전 발표와 최신 발표의 항목별 점수 변화 분석
 - 팀 공간 내 발표 공유 및 댓글 기능을 통한 상호 피드백
+
+<img width="1383" height="776" alt="스크린샷 2026-01-28 오후 1 22 46" src="https://github.com/user-attachments/assets/5c06f879-200f-4a41-bd62-6b69b7e42a25" />
+
 
 
 ## 3. 분석 지표
@@ -72,12 +79,17 @@ AI 기반 한국어 발표 연습 및 분석 웹서비스
 
 ### 5.1 메인 대시보드
 
+<img width="829" height="476" alt="스크린샷 2026-01-28 오후 1 24 38" src="https://github.com/user-attachments/assets/f82bc9fa-31fd-45cb-b8b0-7580ae753b8e" />
+
 
 ### 5.2 상세 분석 결과
 
 
+
+
 ### 5.3 발표 비교 및 개선점
 
+<img width="876" height="445" alt="스크린샷 2026-01-28 오후 1 26 50" src="https://github.com/user-attachments/assets/17fbea64-2a84-4991-9125-048253aa2a79" />
 
 
 ## 6. 시연 및 팀원
