@@ -1,7 +1,7 @@
 package com.example.ddorang.presentation.service;
 
 import com.example.ddorang.presentation.entity.VideoAnalysisJob;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import com.example.ddorang.presentation.repository.PresentationRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -9,6 +9,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.io.File;
 import java.util.HashMap;
@@ -22,27 +23,47 @@ public class FastApiPollingService {
 
     private final VideoAnalysisService videoAnalysisService;
     private final VideoChunkService videoChunkService;
+    private final PresentationRepository presentationRepository;
     private final RestTemplate restTemplate;
-    private final ObjectMapper objectMapper;
 
     @Value("${fastapi.base-url:http://localhost:8000}")
     private String fastApiUrl;
 
-    @Value("${app.upload.dir:uploads}")
-    private String uploadDir;
-
-    // 비동기 영상 분석 시작
+    // 비동기 영상 분석 시작 (MultipartFile - 트랜잭션 커밋 전에만 사용 가능)
     @Async
-    public CompletableFuture<Void> startVideoAnalysis(VideoAnalysisJob job) {
-        log.info("🎬 FastAPI 비동기 분석 시작: {} - {}", job.getId(), job.getPresentation().getTitle());
+    public CompletableFuture<Void> startVideoAnalysis(VideoAnalysisJob job, MultipartFile videoFile) {
+        log.info("🎬 FastAPI 비동기 분석 시작 (MultipartFile): {} - {}", job.getId(), job.getPresentation().getTitle());
+        
+        try {
+            // MultipartFile을 임시 파일로 저장 (트랜잭션 커밋 후에는 MultipartFile이 정리되므로)
+            log.info("📁 MultipartFile을 임시 파일로 저장 시작: {} (크기: {}MB)", 
+                videoFile.getOriginalFilename(), videoFile.getSize() / (1024 * 1024));
+            File tempFile = File.createTempFile("video_upload_", "_" + videoFile.getOriginalFilename());
+            videoFile.transferTo(tempFile);
+            log.info("✅ 임시 파일 생성 완료: {} ({}MB)", tempFile.getAbsolutePath(), tempFile.length() / (1024 * 1024));
+            
+            // File을 받는 오버로드 메서드 호출
+            return startVideoAnalysis(job, tempFile);
+            
+        } catch (Exception e) {
+            log.error("❌ MultipartFile을 임시 파일로 저장 실패: {}", job.getId(), e);
+            videoAnalysisService.markJobAsFailed(job.getId(), "파일 저장 실패: " + e.getMessage());
+            return CompletableFuture.completedFuture(null);
+        }
+    }
+    
+    // 비동기 영상 분석 시작 (File - 트랜잭션 커밋 후에도 사용 가능)
+    @Async
+    public CompletableFuture<Void> startVideoAnalysis(VideoAnalysisJob job, File videoFile) {
+        log.info("🎬 FastAPI 비동기 분석 시작 (File): {} - {}", job.getId(), job.getPresentation().getTitle());
         log.debug("DEBUG: VideoAnalysisJob - videoPath: {}, presentationId: {}", job.getVideoPath(), job.getPresentation().getId());
         log.debug("DEBUG: VideoChunkService bean: {}", videoChunkService != null ? "OK" : "NULL");
 
         try {
-            // FastAPI /analysis 엔드포인트 호출
-            log.debug("DEBUG: callFastApiStt() 호출 직전");
-            String fastApiJobId = callFastApiStt(job);
-            log.debug("DEBUG: callFastApiStt() 호출 직후 - 반환값: {}", fastApiJobId);
+            // FastAPI /analysis 엔드포인트 호출 (파일 직접 전달)
+            log.debug("DEBUG: callFastApiAnalysis() 호출 직전");
+            String fastApiJobId = callFastApiAnalysisWithFile(job, videoFile);
+            log.debug("DEBUG: callFastApiAnalysis() 호출 직후 - 반환값: {}", fastApiJobId);
 
             if (fastApiJobId == null) {
                 log.warn("⚠️ FastAPI 초기 호출 실패, 백그라운드 처리 대기 중: {}", job.getId());
@@ -60,47 +81,29 @@ public class FastApiPollingService {
         } catch (Exception e) {
             log.error("FastAPI 분석 시작 실패: {}", job.getId(), e);
             videoAnalysisService.markJobAsFailed(job.getId(), "분석 시작 실패: " + e.getMessage());
+        } finally {
+            // 임시 파일 삭제 (File로 전달된 경우에만)
+            if (videoFile != null && videoFile.exists() && videoFile.getName().startsWith("video_upload_")) {
+                boolean deleted = videoFile.delete();
+                if (deleted) {
+                    log.debug("DEBUG: 임시 파일 삭제 완료: {}", videoFile.getAbsolutePath());
+                } else {
+                    log.warn("⚠️ 임시 파일 삭제 실패: {}", videoFile.getAbsolutePath());
+                }
+            }
         }
 
         return CompletableFuture.completedFuture(null);
     }
 
 
-    // FastAPI /analysis 엔드포인트 호출 (청크 업로드 방식)
-    private String callFastApiStt(VideoAnalysisJob job) {
-        log.debug("DEBUG: callFastApiStt() 메서드 진입");
+    // FastAPI /analysis 엔드포인트 호출 (File 직접 전달)
+    private String callFastApiAnalysisWithFile(VideoAnalysisJob job, File videoFile) {
+        log.debug("DEBUG: callFastApiAnalysisWithFile() 메서드 진입");
 
         try {
-            log.info("📹 FastAPI Analysis 호출 (청크 모드): {}", job.getVideoPath());
-
-            // 비디오 파일 경로 처리
-            String videoPath = job.getVideoPath();
-
-            log.debug("DEBUG: 원본 videoPath: {}", videoPath);
-
-            // 웹 URL을 실제 파일 경로로 변환
-            // /api/files/videos/... → uploads/videos/...
-            if (videoPath.startsWith("/api/files/videos/")) {
-                String relativePath = videoPath.substring("/api/files/videos/".length());
-                videoPath = uploadDir + "/videos/" + relativePath;
-                log.debug("DEBUG: 웹 URL을 파일 경로로 변환: {}", videoPath);
-            }
-
-            // 상대 경로인 경우 절대 경로로 변환
-            if (!videoPath.startsWith("/")) {
-                videoPath = System.getProperty("user.dir") + "/" + videoPath;
-                log.debug("DEBUG: 절대 경로로 변환: {}", videoPath);
-            }
-
-            File videoFile = new File(videoPath);
-            log.debug("DEBUG: 파일 존재 여부: {}, 크기: {}MB",
-                videoFile.exists(),
-                videoFile.exists() ? videoFile.length() / (1024 * 1024) : 0);
-
-            if (!videoFile.exists()) {
-                log.error("❌ 비디오 파일 없음: {}", videoPath);
-                return null;
-            }
+            log.info("📹 FastAPI 분석 호출 (File 직접 전달): {} (크기: {}MB)", 
+                videoFile.getName(), videoFile.length() / (1024 * 1024));
 
             // ===== 1. 메타데이터 구성 =====
             Map<String, Object> metadata = new HashMap<>();
@@ -111,24 +114,98 @@ public class FastApiPollingService {
 
             // ===== 2. 청크 업로드 =====
             videoAnalysisService.updateJobStatus(job.getId(), "processing", "영상 업로드 중...");
-            log.debug("DEBUG: videoChunkService.uploadVideoInChunks() 호출 직전");
-            log.debug("DEBUG: videoChunkService는 null? {}", videoChunkService == null);
-
-            String fastApiJobId = videoChunkService.uploadVideoInChunks(videoFile, metadata);
-
-            log.debug("DEBUG: videoChunkService.uploadVideoInChunks() 호출 완료 - 반환값: {}", fastApiJobId);
+            
+            // 메모리 사용량 확인
+            Runtime runtime = Runtime.getRuntime();
+            long totalMemory = runtime.totalMemory();
+            long freeMemory = runtime.freeMemory();
+            long usedMemory = totalMemory - freeMemory;
+            log.info("💾 메모리 상태 - 사용: {}MB / 전체: {}MB / 사용 가능: {}MB", 
+                usedMemory / (1024 * 1024), totalMemory / (1024 * 1024), freeMemory / (1024 * 1024));
+            
+            // video_path를 받기 위한 Map 생성
+            Map<String, String> videoPathMap = new HashMap<>();
+            
+            // 청크 업로드
+            log.info("🔄 videoChunkService.uploadVideoInChunks() 호출 시작");
+            String fastApiJobId = videoChunkService.uploadVideoInChunks(videoFile, metadata, videoPathMap);
+            log.info("✅ videoChunkService.uploadVideoInChunks() 호출 완료 - 반환값: {}", fastApiJobId);
             log.info("✅ FastAPI 청크 업로드 성공 - job_id: {}", fastApiJobId);
+            
+            // 메모리 사용량 재확인
+            runtime = Runtime.getRuntime();
+            totalMemory = runtime.totalMemory();
+            freeMemory = runtime.freeMemory();
+            usedMemory = totalMemory - freeMemory;
+            log.info("💾 청크 업로드 후 메모리 상태 - 사용: {}MB / 전체: {}MB / 사용 가능: {}MB", 
+                usedMemory / (1024 * 1024), totalMemory / (1024 * 1024), freeMemory / (1024 * 1024));
+            
+            // video_path가 있으면 즉시 URL 생성 및 저장
+            if (videoPathMap.containsKey("video_path")) {
+                String videoPath = videoPathMap.get("video_path");
+                log.info("📹 즉시 video_path 수신: {}", videoPath);
+                saveVideoPathImmediately(job, videoPath);
+            }
+            
             return fastApiJobId;
 
         } catch (Exception e) {
-            log.error("❌ FastAPI /analysis 청크 업로드 실패 - 예외 타입: {}, 메시지: {}",
+            log.error("❌ FastAPI /analysis 호출 실패 - 예외 타입: {}, 메시지: {}",
                 e.getClass().getSimpleName(), e.getMessage(), e);
         }
 
-        log.debug("DEBUG: callFastApiStt() null 반환");
+        log.debug("DEBUG: callFastApiAnalysisWithFile() null 반환");
         return null;
     }
 
+    /**
+     * video_path를 받은 직후 즉시 URL 생성 및 저장
+     */
+    private void saveVideoPathImmediately(VideoAnalysisJob job, String videoPath) {
+        try {
+            log.info("📹 비디오 경로 즉시 저장 시작: {}", videoPath);
+            
+            // VideoAnalysisJob에 video_path 저장
+            job.setVideoPath(videoPath);
+            videoAnalysisService.updateJobStatus(job.getId(), "processing", "영상 파일 저장 완료. 분석을 시작합니다...");
+            
+            // 파일 서버 URL 생성
+            String videoUrl = generateVideoUrl(videoPath);
+            
+            // Presentation에 videoUrl 저장
+            job.getPresentation().setVideoUrl(videoUrl);
+            // Presentation 저장
+            presentationRepository.save(job.getPresentation());
+            
+            log.info("📹 비디오 URL 즉시 생성 및 저장 완료: {}", videoUrl);
+            
+        } catch (Exception e) {
+            log.warn("비디오 경로 즉시 저장 실패 (분석 완료 시 재시도 예정): {}", e.getMessage());
+        }
+    }
+
+    /**
+     * FastAPI에서 받은 비디오 상대 경로를 파일 서버 URL로 변환
+     */
+    private String generateVideoUrl(String videoPath) {
+        if (videoPath == null || videoPath.isEmpty()) {
+            return null;
+        }
+        
+        // 이미 URL 형식인 경우 그대로 반환
+        if (videoPath.startsWith("http://") || videoPath.startsWith("https://")) {
+            return videoPath;
+        }
+        
+        // 상대 경로를 파일 서버 URL로 변환
+        // stored_videos/{filename} -> /api/files/videos/stored_videos/{filename}
+        String url = "/api/files/videos/" + videoPath;
+        if (url.startsWith("//")) {
+            url = url.substring(1); // 앞의 / 중 하나 제거
+        }
+        log.debug("비디오 URL 생성: {} -> {}", videoPath, url);
+        return url;
+    }
 
     // FastAPI 결과 폴링
     // 5초마다 /result/{job_id} 호출
@@ -141,7 +218,8 @@ public class FastApiPollingService {
         while (attempts < maxAttempts) {
             try {
                 // FastAPI /result/{job_id} 호출
-                ResponseEntity<Map> response = restTemplate.getForEntity(
+                @SuppressWarnings("unchecked")
+                ResponseEntity<Map<String, Object>> response = (ResponseEntity<Map<String, Object>>) (ResponseEntity<?>) restTemplate.getForEntity(
                     fastApiUrl + "/result/" + fastApiJobId,
                     Map.class
                 );

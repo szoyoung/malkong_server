@@ -49,6 +49,7 @@ public class SecurityConfig {
                 .csrf(csrf -> csrf.disable())
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(ApiPaths.AUTH + "/**",
+                                "/auth/**",  // /api/auth와 /auth 모두 허용
                                 ApiPaths.OAUTH + "/**",
                                 "/test/**",
                                 "/api/files/**",

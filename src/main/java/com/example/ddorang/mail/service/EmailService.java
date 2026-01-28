@@ -3,6 +3,7 @@ package com.example.ddorang.mail.service;
 import jakarta.mail.internet.MimeMessage;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.stereotype.Service;
@@ -15,6 +16,9 @@ import java.util.UUID;
 public class EmailService {
 
     private final JavaMailSender mailSender;
+    
+    @Value("${app.frontend-url:http://localhost:3000}")
+    private String frontendUrl;
 
     public void sendEmailCode(String to, String code) {
         try {
@@ -58,7 +62,7 @@ public class EmailService {
             helper.setTo(to);
             helper.setSubject("[말콩] AI 분석이 완료되었습니다");
 
-            String viewUrl = String.format("http://localhost:3000/analysis/%s", presentationId);
+            String viewUrl = String.format("%s/video-analysis/%s", frontendUrl, presentationId);
             
             String html = """
                 <div style="font-family: Arial, sans-serif; padding: 20px; max-width: 600px; margin: 0 auto;">

@@ -100,9 +100,11 @@ public class ComparisonService {
         // STT 결과에서 발음 점수 가져오기
         Float pronunciationScore1 = null;
         Float pronunciationScore2 = null;
+        SttResult stt1 = null;
+        SttResult stt2 = null;
         
         try {
-            SttResult stt1 = getSttResult(p1.getId());
+            stt1 = getSttResult(p1.getId());
             pronunciationScore1 = stt1.getPronunciationScore();
             log.info("발표1의 발음 점수: {}", pronunciationScore1);
         } catch (Exception e) {
@@ -110,7 +112,7 @@ public class ComparisonService {
         }
         
         try {
-            SttResult stt2 = getSttResult(p2.getId());
+            stt2 = getSttResult(p2.getId());
             pronunciationScore2 = stt2.getPronunciationScore();
             log.info("발표2의 발음 점수: {}", pronunciationScore2);
         } catch (Exception e) {
@@ -131,7 +133,10 @@ public class ComparisonService {
                 .wpmGrade(analysis1.getWpmGrade())
                 .anxietyGrade(analysis1.getAnxietyGrade())
                 .anxietyRatio(analysis1.getAnxietyRatio())
+                .anxietyComment(analysis1.getAnxietyComment())
                 .pronunciationScore(pronunciationScore1)
+                .pronunciationGrade(stt1 != null ? stt1.getPronunciationGrade() : null)
+                .pronunciationComment(stt1 != null ? stt1.getPronunciationComment() : null)
                 .build();
                 
         // 발표2의 메트릭스 생성
@@ -148,7 +153,10 @@ public class ComparisonService {
                 .wpmGrade(analysis2.getWpmGrade())
                 .anxietyGrade(analysis2.getAnxietyGrade())
                 .anxietyRatio(analysis2.getAnxietyRatio())
+                .anxietyComment(analysis2.getAnxietyComment())
                 .pronunciationScore(pronunciationScore2)
+                .pronunciationGrade(stt2 != null ? stt2.getPronunciationGrade() : null)
+                .pronunciationComment(stt2 != null ? stt2.getPronunciationComment() : null)
                 .build();
         
         return ComparisonDataDto.builder()

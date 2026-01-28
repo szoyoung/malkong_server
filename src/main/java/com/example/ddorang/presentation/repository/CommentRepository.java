@@ -17,8 +17,8 @@ public interface CommentRepository extends JpaRepository<Comment, UUID> {
     @Query("SELECT c FROM Comment c WHERE c.presentation.id = :presentationId AND c.parentComment IS NULL ORDER BY c.timestamp ASC NULLS LAST")
     List<Comment> findByPresentationIdOrderByTimestamp(@Param("presentationId") UUID presentationId);
     
-    // 특정 프레젠테이션의 모든 댓글 조회 (작성일순 정렬)
-    @Query("SELECT c FROM Comment c WHERE c.presentation.id = :presentationId AND c.parentComment IS NULL ORDER BY c.createdAt ASC")
+    // 특정 프레젠테이션의 모든 댓글 조회 (작성일순 정렬 - 최신순)
+    @Query("SELECT c FROM Comment c WHERE c.presentation.id = :presentationId AND c.parentComment IS NULL ORDER BY c.createdAt DESC")
     List<Comment> findByPresentationIdOrderByCreatedAt(@Param("presentationId") UUID presentationId);
     
     // 특정 댓글의 대댓글 조회

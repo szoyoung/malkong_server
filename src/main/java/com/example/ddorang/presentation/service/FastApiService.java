@@ -42,7 +42,6 @@ public class FastApiService {
         log.info("FastAPI 음성 분석 요청 시작: {}, 파일 크기: {} bytes, 목표시간: {}초",
                 videoFile.getOriginalFilename(), videoFile.getSize(), goalTimeSeconds);
 
-        String url = fastApiBaseUrl + "/analysis";
         File tempFile = null;
 
         try {
@@ -160,6 +159,12 @@ public class FastApiService {
         mockResult.put("wpm_comment", "말하기 속도가 적당합니다. (목 데이터 - FastAPI 서버 연결 필요)");
         mockResult.put("transcription", "안녕하세요. 이것은 테스트용 목 데이터입니다. 실제 음성 인식 결과는 FastAPI 서버(" + fastApiBaseUrl + ") 연결 후 확인하실 수 있습니다.");
         mockResult.put("pronunciation_score", 0.75f);
+        mockResult.put("pronounciation_score", 0.75f);
+        mockResult.put("pronounciation_grade", "B");
+        mockResult.put("pronounciation_text", "발음 정확도가 안정적인 편입니다. (목 데이터)");
+        mockResult.put("anxiety_grade", "C");
+        mockResult.put("anxiety_ratio", 0.08f);
+        mockResult.put("anxiety_comment", "불안 징후 비율이 8.0%로 약간의 긴장감이 느껴집니다. (목 데이터)");
         mockResult.put("duration_seconds", 120); // Mock 데이터로 2분(120초) 설정
         
         // 불안 분석 목 데이터 추가

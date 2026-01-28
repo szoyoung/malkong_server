@@ -32,23 +32,11 @@ public class AsyncConfig implements AsyncConfigurer {
     @Override
     public Executor getAsyncExecutor() {
         ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
-
-        // 기본 스레드 수 (항상 유지)
         executor.setCorePoolSize(5);
-
-        // 최대 스레드 수
         executor.setMaxPoolSize(20);
-
-        // 큐 용량 (대기 작업 수)
         executor.setQueueCapacity(100);
-
-        // 스레드 이름 접두사 (로그 추적 용이)
         executor.setThreadNamePrefix("async-video-");
-
-        // 큐가 가득 찬 경우 처리 정책: 호출한 스레드에서 직접 실행
         executor.setRejectedExecutionHandler(new ThreadPoolExecutor.CallerRunsPolicy());
-
-        // 스레드 풀 초기화
         executor.initialize();
 
         log.info("비동기 스레드 풀 설정 완료: core={}, max={}, queue={}",

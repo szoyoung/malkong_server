@@ -58,4 +58,7 @@ public class VoiceAnalysis {
 
     @Column(name = "anxiety_ratio")
     private Float anxietyRatio;
+
+    @Column(name = "anxiety_comment", columnDefinition = "TEXT")
+    private String anxietyComment;
 } 

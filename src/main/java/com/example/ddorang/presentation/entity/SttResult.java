@@ -28,6 +28,12 @@ public class SttResult {
     @Column(name = "pronunciation_score")
     private Float pronunciationScore;
 
+    @Column(name = "pronunciation_grade", length = 10)
+    private String pronunciationGrade;
+
+    @Column(name = "pronunciation_comment", columnDefinition = "TEXT")
+    private String pronunciationComment;
+
     @Column(name = "adjusted_script", columnDefinition = "TEXT")
     private String adjustedScript;
 

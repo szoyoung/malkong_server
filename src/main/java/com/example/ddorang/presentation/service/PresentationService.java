@@ -5,11 +5,6 @@ import com.example.ddorang.presentation.entity.PresentationComparison;
 import com.example.ddorang.presentation.entity.Topic;
 import com.example.ddorang.presentation.repository.*;
 import com.example.ddorang.presentation.entity.VideoAnalysisJob;
-import com.example.ddorang.common.service.FileStorageService;
-import com.example.ddorang.presentation.service.FastApiService;
-import com.example.ddorang.presentation.service.VoiceAnalysisService;
-import com.example.ddorang.presentation.service.FastApiPollingService;
-import com.example.ddorang.presentation.service.VideoAnalysisService;
 import com.example.ddorang.team.entity.Team;
 import com.example.ddorang.team.entity.TeamMember;
 import com.example.ddorang.team.repository.TeamRepository;
@@ -21,10 +16,12 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
+import java.io.File;
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -41,9 +38,6 @@ public class PresentationService {
     private final PresentationFeedbackRepository presentationFeedbackRepository;
     private final PresentationComparisonRepository presentationComparisonRepository;
     private final VideoAnalysisJobRepository videoAnalysisJobRepository;
-    private final FileStorageService fileStorageService;
-    private final FastApiService fastApiService;
-    private final VoiceAnalysisService voiceAnalysisService;
     private final FastApiPollingService fastApiPollingService;
     private final VideoAnalysisService videoAnalysisService;
     private final TeamRepository teamRepository;
@@ -166,41 +160,17 @@ public class PresentationService {
             log.info("개인 토픽 프레젠테이션 생성 권한 확인 완료 - 사용자: {}", currentUserId);
         }
         
-        // 비디오 파일 처리
-        String videoUrl = null;
-        if (videoFile != null && !videoFile.isEmpty()) {
-            try {
-                // 파일 저장 (사용자 ID와 토픽 ID를 projectId로 사용)
-                String userId = topic.getUser() != null ? topic.getUser().getUserId().toString() : "anonymous";
-                Long projectId = Long.valueOf(Math.abs(topicId.hashCode())); // UUID를 Long으로 변환
-                
-                FileStorageService.FileInfo fileInfo = fileStorageService.storeVideoFile(videoFile, userId, projectId);
-                // relativePath에서 videos/ 부분을 제거하고 URL 생성
-                String cleanPath = fileInfo.relativePath;
-                if (cleanPath.startsWith("videos/")) {
-                    cleanPath = cleanPath.substring("videos/".length());
-                }
-                videoUrl = "/api/files/videos/" + cleanPath;
-                
-                log.info("비디오 파일 저장 완료: {}", videoUrl);
-                log.info("원본 relativePath: {}", fileInfo.relativePath);
-                log.info("정리된 경로: {}", cleanPath);
-            } catch (Exception e) {
-                log.error("비디오 파일 저장 실패: {}", e.getMessage());
-                throw new RuntimeException("비디오 파일 저장에 실패했습니다: " + e.getMessage());
-            }
-        }
-        
         // 제목이 없으면 기본 제목 설정
         if (title == null || title.trim().isEmpty()) {
             title = "새 프레젠테이션 " + LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"));
         }
         
+        // 비디오 파일은 분석 서버에 직접 저장되므로 videoUrl은 null로 설정
         Presentation presentation = Presentation.builder()
                 .topic(topic)
                 .title(title)
                 .script(script != null ? script : "")
-                .videoUrl(videoUrl)
+                .videoUrl(null) // 파일은 분석 서버에 저장됨
                 .goalTime(goalTime)
                 .createdAt(LocalDateTime.now())
                 .build();
@@ -209,11 +179,11 @@ public class PresentationService {
         log.info("프레젠테이션 생성 완료: {}", savedPresentation.getId());
 
         // 비디오 파일이 업로드되었으면 자동으로 분석 작업 시작
-        if (videoFile != null && !videoFile.isEmpty() && savedPresentation.getVideoUrl() != null) {
+        if (videoFile != null && !videoFile.isEmpty()) {
             try {
                 log.info("비디오 파일이 업로드되었으므로 자동으로 분석 작업을 시작합니다 - 프레젠테이션: {}", savedPresentation.getId());
                 
-                // 비동기 분석 작업 생성
+                // 비동기 분석 작업 생성 (파일은 분석 서버에 직접 저장됨)
                 VideoAnalysisJob job = createVideoAnalysisJob(
                     savedPresentation,
                     videoFile.getOriginalFilename(),
@@ -223,10 +193,30 @@ public class PresentationService {
                 // DB에 초기 상태 저장
                 videoAnalysisService.initializeJob(job);
                 
-                // FastAPI 폴링 시작 (백그라운드)
-                fastApiPollingService.startVideoAnalysis(job);
+                // 트랜잭션 커밋 전에 MultipartFile을 임시 파일로 저장
+                // (커밋 후에는 MultipartFile이 정리되어 접근 불가)
+                log.info("📁 트랜잭션 커밋 전 임시 파일 생성 시작: {} (크기: {}MB)", 
+                    videoFile.getOriginalFilename(), videoFile.getSize() / (1024 * 1024));
+                File tempFile = File.createTempFile("video_upload_", "_" + videoFile.getOriginalFilename());
+                videoFile.transferTo(tempFile);
+                log.info("✅ 임시 파일 생성 완료: {} ({}MB)", tempFile.getAbsolutePath(), tempFile.length() / (1024 * 1024));
                 
-                log.info("자동 분석 작업이 시작되었습니다 - 작업 ID: {}", job.getId());
+                // FastAPI 폴링 시작 (백그라운드) - File 객체 전달
+                if (TransactionSynchronizationManager.isSynchronizationActive()) {
+                    VideoAnalysisJob finalJob = job;
+                    File finalTempFile = tempFile; // 임시 파일 전달
+                    TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                        @Override
+                        public void afterCommit() {
+                            log.info("트랜잭션 커밋 후 자동 분석 작업 시작 - 작업 ID: {}", finalJob.getId());
+                            fastApiPollingService.startVideoAnalysis(finalJob, finalTempFile);
+                        }
+                    });
+                } else {
+                    fastApiPollingService.startVideoAnalysis(job, tempFile);
+                }
+                
+                log.info("자동 분석 작업 시작 등록 완료 - 작업 ID: {}", job.getId());
             } catch (Exception e) {
                 log.error("자동 분석 작업 시작 실패: {}", e.getMessage(), e);
                 // 분석 작업 실패해도 프레젠테이션 생성은 성공으로 처리
@@ -265,58 +255,15 @@ public class PresentationService {
     }
     
     // 비디오 파일 업데이트 (별도 업로드)
+    // 파일은 분석 서버에 직접 저장되므로 로컬 저장 로직 제거
     @Transactional
     public Presentation updateVideoFile(UUID presentationId, MultipartFile videoFile) {
-        log.info("프레젠테이션 {} 비디오 파일 업데이트", presentationId);
+        log.info("프레젠테이션 {} 비디오 파일 업데이트 (분석 서버에 직접 저장)", presentationId);
         
         Presentation presentation = getPresentationById(presentationId);
         
-        if (videoFile != null && !videoFile.isEmpty()) {
-            try {
-                // 기존 파일 삭제 (필요시)
-                if (presentation.getVideoUrl() != null) {
-                    try {
-                        String oldVideoUrl = presentation.getVideoUrl();
-                        log.info("기존 비디오 파일 삭제 시도: {}", oldVideoUrl);
-                        
-                        String oldFilePath = extractFilePathFromUrl(oldVideoUrl);
-                        if (oldFilePath != null) {
-                            boolean deleted = fileStorageService.deleteFile(oldFilePath);
-                            if (deleted) {
-                                log.info("기존 비디오 파일 삭제 완료: {}", oldFilePath);
-                            } else {
-                                log.warn("기존 비디오 파일 삭제 실패 (파일이 존재하지 않을 수 있음): {}", oldFilePath);
-                            }
-                        }
-                    } catch (Exception e) {
-                        log.error("기존 비디오 파일 삭제 중 오류 발생: {}", e.getMessage(), e);
-                        // 기존 파일 삭제 실패해도 새 파일 업로드는 계속 진행
-                    }
-                }
-                
-                // 새 파일 저장
-                String userId = presentation.getTopic().getUser() != null ? 
-                    presentation.getTopic().getUser().getUserId().toString() : "anonymous";
-                Long projectId = Long.valueOf(Math.abs(presentation.getTopic().getId().hashCode()));
-                
-                FileStorageService.FileInfo fileInfo = fileStorageService.storeVideoFile(videoFile, userId, projectId);
-                // relativePath에서 videos/ 부분을 제거하고 URL 생성
-                String cleanPath = fileInfo.relativePath;
-                if (cleanPath.startsWith("videos/")) {
-                    cleanPath = cleanPath.substring("videos/".length());
-                }
-                String videoUrl = "/api/files/videos/" + cleanPath;
-                
-                presentation.setVideoUrl(videoUrl);
-                
-                log.info("비디오 파일 업데이트 완료: {}", videoUrl);
-                log.info("원본 relativePath: {}", fileInfo.relativePath);
-                log.info("정리된 경로: {}", cleanPath);
-            } catch (Exception e) {
-                log.error("비디오 파일 업데이트 실패: {}", e.getMessage());
-                throw new RuntimeException("비디오 파일 업데이트에 실패했습니다: " + e.getMessage());
-            }
-        }
+        // 파일은 분석 서버에 직접 저장되므로 videoUrl은 null로 설정
+        presentation.setVideoUrl(null);
         
         return presentationRepository.save(presentation);
     }
@@ -379,31 +326,7 @@ public class PresentationService {
             }
         }
         
-        // 6. 비디오 파일 삭제 (필요시)
-        if (presentation.getVideoUrl() != null) {
-            try {
-                // videoUrl에서 실제 파일 경로 추출
-                String videoUrl = presentation.getVideoUrl();
-                log.info("비디오 파일 삭제 시도: {}", videoUrl);
-                
-                // URL에서 파일 경로 추출 (/api/files/videos/... -> uploads/videos/...)
-                String filePath = extractFilePathFromUrl(videoUrl);
-                
-                if (filePath != null) {
-                    boolean deleted = fileStorageService.deleteFile(filePath);
-                    if (deleted) {
-                        log.info("비디오 파일 삭제 완료: {}", filePath);
-                    } else {
-                        log.warn("비디오 파일 삭제 실패 (파일이 존재하지 않을 수 있음): {}", filePath);
-                    }
-                } else {
-                    log.warn("비디오 파일 경로를 추출할 수 없습니다: {}", videoUrl);
-                }
-            } catch (Exception e) {
-                log.error("비디오 파일 삭제 중 오류 발생: {}", e.getMessage(), e);
-                // 파일 삭제 실패해도 프레젠테이션 삭제는 계속 진행
-            }
-        }
+        // 6. 비디오 파일은 분석 서버에 저장되므로 스프링에서는 삭제하지 않음
         
         // 7. 프레젠테이션 삭제
         presentationRepository.delete(presentation);
@@ -603,34 +526,6 @@ public class PresentationService {
     public boolean hasPresentation(UUID presentationId) {
         return presentationRepository.existsById(presentationId);
     }
-    /**
-     * URL에서 실제 파일 경로 추출
-     * /api/files/videos/userId/projectId/date/fileName -> uploads/videos/userId/projectId/date/fileName
-     */
-    private String extractFilePathFromUrl(String videoUrl) {
-        if (videoUrl == null || videoUrl.isEmpty()) {
-            return null;
-        }
-        
-        try {
-            // /api/files/videos/ 부분을 uploads/videos/로 변경
-            if (videoUrl.startsWith("/api/files/videos/")) {
-                return videoUrl.replace("/api/files/videos/", "uploads/videos/");
-            }
-            
-            // 이미 uploads/로 시작하는 경우 그대로 반환
-            if (videoUrl.startsWith("uploads/")) {
-                return videoUrl;
-            }
-            
-            log.warn("지원하지 않는 비디오 URL 형식: {}", videoUrl);
-            return null;
-            
-        } catch (Exception e) {
-            log.error("파일 경로 추출 실패: {}", e.getMessage());
-            return null;
-        }
-    }
 
     // 비동기 영상 분석 관련 메서드들
     @Transactional
@@ -644,10 +539,9 @@ public class PresentationService {
                 throw new RuntimeException("이미 진행 중인 영상 분석 작업이 있습니다. 기존 작업: " + existingJob.getId());
             });
 
-        // VideoAnalysisJob 생성
+        // VideoAnalysisJob 생성 (파일은 분석 서버에 직접 저장되므로 videoPath는 null)
         VideoAnalysisJob job = VideoAnalysisJob.builder()
             .presentation(presentation)
-            .videoPath(presentation.getVideoUrl())
             .originalFilename(originalFilename)
             .fileSize(fileSize)
             .build();

@@ -6,6 +6,7 @@ import com.example.ddorang.auth.service.TokenService;
 import com.example.ddorang.auth.security.JwtTokenProvider;
 import com.example.ddorang.common.ApiPaths;
 import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -25,6 +26,9 @@ public class OAuth2Controller {
     private final OAuth2UserService oauth2UserService;
     private final TokenService tokenService;
     private final JwtTokenProvider jwtTokenProvider;
+    
+    @Value("${app.frontend-url:http://localhost:3000}")
+    private String frontendUrl;
 
     private String bearer(HttpHeaders h) {
         String v = h.getFirst(HttpHeaders.AUTHORIZATION);
@@ -48,7 +52,7 @@ public class OAuth2Controller {
                              HttpServletResponse response) throws IOException {
         if (authentication == null) {
             System.out.println("=== OAuth2 인증 실패: authentication 객체가 null입니다 ===");
-            response.sendRedirect("http://localhost:3000/oauth2/callback/google?error=auth_failed");
+            response.sendRedirect(frontendUrl + "/oauth2/callback/google?error=auth_failed");
             return;
         }
 
@@ -59,7 +63,7 @@ public class OAuth2Controller {
 
             if (client == null) {
                 System.out.println("=== OAuth2 인증 실패: client 객체가 null입니다 ===");
-                response.sendRedirect("http://localhost:3000/oauth2/callback/google?error=client_failed");
+                response.sendRedirect(frontendUrl + "/oauth2/callback/google?error=client_failed");
                 return;
             }
 
@@ -83,7 +87,7 @@ public class OAuth2Controller {
             String jwtToken = jwtTokenProvider.createAccessToken(savedUser.getEmail(), savedUser.getUserId(), "GOOGLE");
 
             // 사용자 정보도 함께 전달 (JWT 토큰 사용)
-            String redirectUrl = "http://localhost:3000/oauth2/callback/google" +
+            String redirectUrl = frontendUrl + "/oauth2/callback/google" +
                     "?token=" + jwtToken +
                     "&email=" + java.net.URLEncoder.encode(savedUser.getEmail(), "UTF-8") +
                     "&name=" + java.net.URLEncoder.encode(savedUser.getName(), "UTF-8");
@@ -94,7 +98,7 @@ public class OAuth2Controller {
             System.out.println("=== OAuth2 로그인 처리 중 오류 발생 ===");
             System.out.println("오류 메시지: " + e.getMessage());
             e.printStackTrace();
-            response.sendRedirect("http://localhost:3000/oauth2/callback/google?error=server_error");
+            response.sendRedirect(frontendUrl + "/oauth2/callback/google?error=server_error");
         }
     }
 

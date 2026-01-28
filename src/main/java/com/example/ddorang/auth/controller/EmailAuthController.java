@@ -13,7 +13,6 @@ import com.example.ddorang.common.ApiPaths;
 import com.example.ddorang.mail.service.VerificationCodeService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -22,7 +21,7 @@ import java.util.Map;
 
 @RestController
 @RequiredArgsConstructor
-@RequestMapping(ApiPaths.AUTH)
+@RequestMapping({ApiPaths.AUTH, "/auth"})  // /api/auth와 /auth 모두 지원
 public class EmailAuthController {
 
     private final AuthService authService;
@@ -31,7 +30,7 @@ public class EmailAuthController {
     private final JwtTokenProvider jwtTokenProvider;
 
     @PostMapping("/login")
-    public ResponseEntity<TokenResponse> login(@RequestBody EmailLoginRequest request) {
+    public ResponseEntity<TokenResponse> login(@RequestBody @Valid EmailLoginRequest request) {
         TokenResponse tokens = authService.login(request);
         return ResponseEntity.ok(tokens);
     }

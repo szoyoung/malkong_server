@@ -20,8 +20,9 @@ public class VideoAnalysisJob {
     @JoinColumn(name = "presentation_id", nullable = false)
     private Presentation presentation;
 
-    @Column(name = "video_path", nullable = false)
-    private String videoPath;  // 업로드된 영상 파일 경로
+    @Builder.Default
+    @Column(name = "video_path")
+    private String videoPath = "";  // 업로드된 영상 파일 경로 (초기에는 빈 문자열)
 
     @Column(name = "original_filename")
     private String originalFilename;  // 원본 파일명

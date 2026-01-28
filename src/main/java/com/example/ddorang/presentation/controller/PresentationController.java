@@ -183,10 +183,10 @@ public class PresentationController {
         authorizationService.requirePresentationModifyPermission(presentationId);
 
         try {
-            // 프레젠테이션에 영상 파일 저장
-            Presentation presentation = presentationService.updateVideoFile(presentationId, videoFile);
+            // 프레젠테이션 정보 조회 (파일 서버 저장 없이)
+            Presentation presentation = presentationService.getPresentationById(presentationId);
 
-            // 비동기 분석 작업 생성
+            // 비동기 분석 작업 생성 (파일은 분석 서버에 직접 저장됨)
             VideoAnalysisJob job = presentationService.createVideoAnalysisJob(
                 presentation,
                 videoFile.getOriginalFilename(),
@@ -196,8 +196,8 @@ public class PresentationController {
             // DB에 초기 상태 저장
             videoAnalysisService.initializeJob(job);
 
-            // FastAPI 폴링 시작 (백그라운드)
-            fastApiPollingService.startVideoAnalysis(job);
+            // FastAPI 폴링 시작 (백그라운드) - 파일을 분석 서버로 직접 전달
+            fastApiPollingService.startVideoAnalysis(job, videoFile);
 
             // 즉시 응답 반환
             VideoAnalysisResponse response = VideoAnalysisResponse.builder()

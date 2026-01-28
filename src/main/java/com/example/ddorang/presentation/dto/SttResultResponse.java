@@ -19,6 +19,8 @@ public class SttResultResponse {
     private String presentationTitle;
     private String transcription;
     private Float pronunciationScore;
+    private String pronunciationGrade;
+    private String pronunciationComment;
     private String adjustedScript;
     private String correctedScript;
     
@@ -30,6 +32,8 @@ public class SttResultResponse {
                 .presentationTitle(sttResult.getPresentation().getTitle())
                 .transcription(sttResult.getTranscription())
                 .pronunciationScore(sttResult.getPronunciationScore())
+                .pronunciationGrade(sttResult.getPronunciationGrade())
+                .pronunciationComment(sttResult.getPronunciationComment())
                 .adjustedScript(sttResult.getAdjustedScript())
                 .correctedScript(sttResult.getCorrectedScript())
                 .build();

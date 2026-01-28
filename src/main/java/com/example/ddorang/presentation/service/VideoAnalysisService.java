@@ -2,7 +2,9 @@ package com.example.ddorang.presentation.service;
 
 import com.example.ddorang.common.enums.JobStatus;
 import com.example.ddorang.common.service.NotificationService;
+import com.example.ddorang.presentation.entity.Presentation;
 import com.example.ddorang.presentation.entity.VideoAnalysisJob;
+import com.example.ddorang.presentation.repository.PresentationRepository;
 import com.example.ddorang.presentation.repository.VideoAnalysisJobRepository;
 import com.example.ddorang.presentation.service.VoiceAnalysisService;
 import lombok.RequiredArgsConstructor;
@@ -23,6 +25,7 @@ import java.util.concurrent.ConcurrentHashMap;
 public class VideoAnalysisService {
 
     private final VideoAnalysisJobRepository videoAnalysisJobRepository;
+    private final PresentationRepository presentationRepository;
     private final NotificationService notificationService;
     private final VoiceAnalysisService voiceAnalysisService;
 
@@ -99,6 +102,18 @@ public class VideoAnalysisService {
             VideoAnalysisJob job = videoAnalysisJobRepository.findById(jobId)
                 .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 작업: " + jobId));
 
+            // FastAPI에서 반환된 video_path 추출 및 저장
+            String videoPath = null;
+            if (analysisResult.containsKey("video_path")) {
+                Object videoPathObj = analysisResult.get("video_path");
+                if (videoPathObj != null) {
+                    videoPath = videoPathObj.toString();
+                    log.info("📹 저장된 비디오 경로 수신: {}", videoPath);
+                    // VideoAnalysisJob에 video_path 저장
+                    job.setVideoPath(videoPath);
+                }
+            }
+
             job.setStatus(JobStatus.COMPLETED);
             videoAnalysisJobRepository.save(job);
             
@@ -106,6 +121,21 @@ public class VideoAnalysisService {
             UUID userId = job.getPresentation().getTopic().getUser().getUserId();
             String presentationTitle = job.getPresentation().getTitle();
             UUID presentationId = job.getPresentation().getId();
+            
+            // 비디오 파일 URL 생성 및 Presentation에 저장
+            if (videoPath != null && !videoPath.isEmpty()) {
+                try {
+                    // 파일 서버 URL 생성 (예: /api/files/videos/stored_videos/{filename})
+                    String videoUrl = generateVideoUrl(videoPath);
+                    Presentation presentation = job.getPresentation();
+                    presentation.setVideoUrl(videoUrl);
+                    // Presentation 저장 (videoUrl 업데이트)
+                    presentationRepository.save(presentation);
+                    log.info("📹 Presentation.videoUrl 설정 및 저장 완료: {}", videoUrl);
+                } catch (Exception e) {
+                    log.warn("비디오 URL 생성/저장 실패 (무시됨): {}", e.getMessage());
+                }
+            }
             
             // 분석 결과를 DB에 저장 (VoiceAnalysis, SttResult, PresentationFeedback)
             voiceAnalysisService.saveAnalysisResults(presentationId, analysisResult);
@@ -269,5 +299,31 @@ public class VideoAnalysisService {
                 "분석 중 오류가 발생했습니다: " + job.getErrorMessage() :
                 "분석 중 오류가 발생했습니다";
         };
+    }
+
+    /**
+     * FastAPI에서 받은 비디오 상대 경로를 파일 서버 URL로 변환
+     * 
+     * @param videoPath FastAPI에서 받은 상대 경로 (예: "stored_videos/{job_id}.mp4")
+     * @return 파일 서버 URL (예: "/api/files/videos/stored_videos/{job_id}.mp4")
+     */
+    private String generateVideoUrl(String videoPath) {
+        if (videoPath == null || videoPath.isEmpty()) {
+            return null;
+        }
+        
+        // 이미 URL 형식인 경우 그대로 반환
+        if (videoPath.startsWith("http://") || videoPath.startsWith("https://") || videoPath.startsWith("/")) {
+            // 절대 URL이 아닌 경우 상대 경로로 처리
+            if (videoPath.startsWith("/api/files/videos/")) {
+                return videoPath;
+            }
+        }
+        
+        // 상대 경로를 파일 서버 URL로 변환
+        // stored_videos/{filename} -> /api/files/videos/stored_videos/{filename}
+        String url = "/api/files/videos/" + videoPath;
+        log.debug("비디오 URL 생성: {} -> {}", videoPath, url);
+        return url;
     }
 }

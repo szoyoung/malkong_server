@@ -16,4 +16,6 @@ public class SttResultCreateRequest {
     private UUID presentationId;
     private String transcription;
     private Float pronunciationScore;
+    private String pronunciationGrade;
+    private String pronunciationComment;
 } 

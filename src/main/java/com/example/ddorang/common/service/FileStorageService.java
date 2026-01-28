@@ -3,16 +3,13 @@ package com.example.ddorang.common.service;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
-import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.nio.file.StandardCopyOption;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
-import java.util.UUID;
 
 @Service
 @Slf4j
@@ -21,46 +18,9 @@ public class FileStorageService {
     @Value("${app.upload.dir:uploads}")
     private String uploadDir;
     
-    @Value("${app.upload.video.dir:uploads/videos}")
-    private String videoUploadDir;
-    
     @Value("${app.upload.thumbnail.dir:uploads/thumbnails}")
     private String thumbnailUploadDir;
 
-    // 비디오 파일 저장
-    public FileInfo storeVideoFile(MultipartFile file, String userId, Long projectId) {
-        try {
-            // 파일 유효성 검사
-            validateVideoFile(file);
-            
-            // 저장 디렉토리 생성
-            Path uploadPath = createUploadDirectory(videoUploadDir, userId, projectId);
-            
-            // 고유한 파일명 생성
-            String originalFileName = file.getOriginalFilename();
-            String fileExtension = getFileExtension(originalFileName);
-            String storedFileName = generateUniqueFileName(fileExtension);
-            
-            // 파일 저장
-            Path targetLocation = uploadPath.resolve(storedFileName);
-            Files.copy(file.getInputStream(), targetLocation, StandardCopyOption.REPLACE_EXISTING);
-            
-            log.info("비디오 파일 저장 완료: {}", targetLocation.toString());
-            
-            return FileInfo.builder()
-                    .originalFileName(originalFileName)
-                    .storedFileName(storedFileName)
-                    .filePath(targetLocation.toString())
-                    .relativePath(getRelativePath(targetLocation))
-                    .fileSize(file.getSize())
-                    .contentType(file.getContentType())
-                    .build();
-                    
-        } catch (IOException e) {
-            log.error("파일 저장 실패: {}", e.getMessage());
-            throw new RuntimeException("파일 저장에 실패했습니다: " + e.getMessage());
-        }
-    }
     
     // 썸네일 파일 저장
     public FileInfo storeThumbnailFile(byte[] thumbnailData, String userId, Long projectId, String originalVideoFileName) {
@@ -125,44 +85,7 @@ public class FileStorageService {
         return uploadPath;
     }
     
-    // 비디오 파일 유효성 검사
-    private void validateVideoFile(MultipartFile file) {
-        if (file.isEmpty()) {
-            throw new RuntimeException("파일이 비어있습니다.");
-        }
-        
-        String contentType = file.getContentType();
-        if (contentType == null || !isVideoFile(contentType)) {
-            throw new RuntimeException("지원하지 않는 파일 형식입니다. 비디오 파일만 업로드 가능합니다.");
-        }
-        
-        // 파일 크기 제한 (500MB)
-        long maxFileSize = 500 * 1024 * 1024; // 500MB
-        if (file.getSize() > maxFileSize) {
-            throw new RuntimeException("파일 크기가 너무 큽니다. 최대 500MB까지 업로드 가능합니다.");
-        }
-    }
-    
-    // 비디오 파일 여부 확인
-    private boolean isVideoFile(String contentType) {
-        return contentType.startsWith("video/") ||
-               contentType.equals("application/octet-stream"); // Blob 업로드 시
-    }
-    
-    // 파일 확장자 추출
-    private String getFileExtension(String fileName) {
-        if (fileName == null || fileName.lastIndexOf('.') == -1) {
-            return ".mp4"; // 기본 확장자
-        }
-        return fileName.substring(fileName.lastIndexOf('.'));
-    }
-    
-    // 고유한 파일명 생성
-    private String generateUniqueFileName(String extension) {
-        String timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"));
-        String uuid = UUID.randomUUID().toString().substring(0, 8);
-        return String.format("%s_%s%s", timestamp, uuid, extension);
-    }
+    // 비디오 파일 관련 메서드 제거됨 (비디오 파일은 분석 서버에서 처리)
     
     // 썸네일 파일명 생성
     private String generateThumbnailFileName(String originalVideoFileName) {
@@ -182,6 +105,7 @@ public class FileStorageService {
         public final String storedFileName;
         public final String filePath;
         public final String relativePath;
+        public final String videoUrl;
         public final Long fileSize;
         public final String contentType;
         
@@ -190,6 +114,7 @@ public class FileStorageService {
             this.storedFileName = builder.storedFileName;
             this.filePath = builder.filePath;
             this.relativePath = builder.relativePath;
+            this.videoUrl = builder.videoUrl;
             this.fileSize = builder.fileSize;
             this.contentType = builder.contentType;
         }
@@ -203,6 +128,7 @@ public class FileStorageService {
             private String storedFileName;
             private String filePath;
             private String relativePath;
+            private String videoUrl;
             private Long fileSize;
             private String contentType;
             
@@ -223,6 +149,11 @@ public class FileStorageService {
             
             public Builder relativePath(String relativePath) {
                 this.relativePath = relativePath;
+                return this;
+            }
+            
+            public Builder videoUrl(String videoUrl) {
+                this.videoUrl = videoUrl;
                 return this;
             }
             
