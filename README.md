@@ -26,7 +26,8 @@ AI 기반 한국어 발표 연습 및 분석 웹서비스
 - 영상 업로드 및 실시간 녹화 기능 지원
 - 5가지 지표를 바탕으로 한 A~D 등급 평가 및 시각화 차트 제공
 
-<img width="1440" height="900" alt="스크린샷 2026-01-28 오후 1 14 02" src="https://github.com/user-attachments/assets/3fb10a04-7d73-442b-8145-9699eff0641d" />
+<img width="858" height="487" alt="스크린샷 2026-01-28 오후 1 43 45" src="https://github.com/user-attachments/assets/8c044907-fad6-4877-873e-3c6340e956d4" />
+
 
 
 ### 2.2 GPT 기반 맞춤형 코칭
